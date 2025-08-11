@@ -22,7 +22,7 @@ export const QueueWidget: React.FC<QueueWidgetProps> = ({ userSTN, department })
     );
   }
 
-  const userPosition = userSTN ? Math.max(0, userSTN - queueStatus.now_serving) : 0;
+  const userPosition = userSTN && queueStatus.now_serving ? Math.max(0, userSTN - queueStatus.now_serving) : 0;
   const estimatedWait = estimateWaitTime(userPosition);
 
   return (
@@ -68,8 +68,17 @@ export const QueueWidget: React.FC<QueueWidgetProps> = ({ userSTN, department })
           <div className="mt-2 bg-blue-200 rounded-full h-2">
             <div 
               className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(100, ((queueStatus.now_serving - 1) / userSTN) * 100)}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, ((queueStatus.now_serving) / userSTN) * 100))}%` }}
             ></div>
+          </div>
+        </div>
+      )}
+      
+      {userSTN && userPosition === 0 && queueStatus.now_serving >= userSTN && (
+        <div className="mt-4 pt-4 border-t border-green-200 bg-green-50 rounded-lg p-3">
+          <div className="text-center">
+            <div className="text-green-800 font-semibold">🎉 It's your turn!</div>
+            <div className="text-sm text-green-700 mt-1">Please proceed to the reception desk</div>
           </div>
         </div>
       )}

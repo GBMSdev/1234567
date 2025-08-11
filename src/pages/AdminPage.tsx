@@ -134,11 +134,12 @@ export const AdminPage: React.FC = () => {
           patient:patients(*),
           doctor:doctors(*)
         `)
-        .eq('qr_payload', JSON.stringify(payload))
+        .contains('qr_payload', JSON.stringify(payload))
         .single();
 
       if (error) {
-        alert('Visit not found');
+        console.error('QR scan error:', error);
+        alert('Visit not found or QR code is invalid');
         return;
       }
 
@@ -161,7 +162,14 @@ export const AdminPage: React.FC = () => {
 
         if (updateError) {
           console.error('Error updating visit:', updateError);
+          alert('Failed to check in patient');
+          return;
         } else {
+          // Log audit action
+          await logAuditAction('QR_CHECK_IN', 'visit', visit.id, { 
+            patient_uid: visit.patient?.uid,
+            stn: visit.stn 
+          });
           refetch();
         }
       }
@@ -181,6 +189,9 @@ export const AdminPage: React.FC = () => {
         throw new Error('Visit not found');
       }
 
+      if (amount <= 0) {
+        throw new Error('Invalid payment amount');
+      }
       // Create payment transaction
       const { data: transaction, error: transactionError } = await supabase
         .from('payment_transactions')
@@ -206,6 +217,12 @@ export const AdminPage: React.FC = () => {
 
       if (visitError) throw visitError;
 
+      // Log audit action
+      await logAuditAction('PROCESS_PAYMENT', 'visit', visitId, { 
+        amount,
+        method,
+        transaction_id: transaction.id 
+      });
       refetch();
       alert('Payment processed successfully!');
     } catch (error: any) {
@@ -232,14 +249,14 @@ export const AdminPage: React.FC = () => {
 
   const updateVisitStatus = async (visitId: string, status: string) => {
     try {
+      const currentVisit = visits.find(v => v.id === visitId);
+      if (!currentVisit) {
+        throw new Error('Visit not found');
+      }
       const updates: any = { status };
       
       if (status === 'completed') {
         updates.completed_at = new Date().toISOString();
-      } else if (status === 'checked_in') {
-        updates.checked_in_at = new Date().toISOString();
-      } else if (status === 'in_service') {
-        updates.checked_in_at = updates.checked_in_at || new Date().toISOString();
       } else if (status === 'checked_in') {
         updates.checked_in_at = new Date().toISOString();
       } else if (status === 'in_service') {
@@ -254,20 +271,26 @@ export const AdminPage: React.FC = () => {
       if (error) throw error;
 
       // Log audit action
-      await logAuditAction('UPDATE_VISIT_STATUS', 'visit', visitId, { 
-        old_status: visits.find(v => v.id === visitId)?.status,
+      await logAuditAction('UPDATE_VISIT_STATUS', 'visit', visitId, {
+        patient_uid: currentVisit.patient?.uid,
+        stn: currentVisit.stn,
+        old_status: currentVisit.status,
         new_status: status 
       });
 
       refetch();
     } catch (error) {
       console.error('Error updating visit status:', error);
-      alert('Failed to update status');
+      alert(`Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
   const updatePaymentStatus = async (visitId: string, paymentStatus: string) => {
     try {
+      const currentVisit = visits.find(v => v.id === visitId);
+      if (!currentVisit) {
+        throw new Error('Visit not found');
+      }
       const { error } = await supabase
         .from('visits')
         .update({ payment_status: paymentStatus })
@@ -277,14 +300,16 @@ export const AdminPage: React.FC = () => {
 
       // Log audit action
       await logAuditAction('UPDATE_PAYMENT_STATUS', 'visit', visitId, { 
-        old_payment_status: visits.find(v => v.id === visitId)?.payment_status,
+        patient_uid: currentVisit.patient?.uid,
+        stn: currentVisit.stn,
+        old_payment_status: currentVisit.payment_status,
         new_payment_status: paymentStatus 
       });
 
       refetch();
     } catch (error) {
       console.error('Error updating payment status:', error);
-      alert('Failed to update payment status');
+      alert(`Failed to update payment status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -292,8 +317,8 @@ export const AdminPage: React.FC = () => {
   const filteredVisits = visits.filter(visit => {
     const matchesSearch = !searchQuery || 
       visit.stn.toString().includes(searchQuery) ||
-      visit.patient?.uid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      visit.patient?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      visit.patient?.uid?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      visit.patient?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       visit.patient?.phone.includes(searchQuery);
 
     const matchesStatus = !statusFilter || visit.status === statusFilter;

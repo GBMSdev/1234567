@@ -44,8 +44,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
         d.specialization === formData.department && d.status === 'active'
       );
       setAvailableDoctors(deptDoctors);
+      // Reset doctor selection when department changes
+      if (formData.doctor_id && !deptDoctors.find(d => d.id === formData.doctor_id)) {
+        setFormData(prev => ({ ...prev, doctor_id: '' }));
+      }
     } else {
       setAvailableDoctors([]);
+      setFormData(prev => ({ ...prev, doctor_id: '' }));
     }
   }, [formData.department, doctors]);
 
@@ -61,6 +66,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
       setDepartments(data || []);
     } catch (error) {
       console.error('Error fetching departments:', error);
+      setErrors(prev => ({ ...prev, department: 'Failed to load departments' }));
     }
   };
 
@@ -85,8 +91,16 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
     if (!formData.name.trim()) newErrors.name = 'Name is required';
     if (!formData.age || formData.age < 1 || formData.age > 120) newErrors.age = 'Valid age is required';
     if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    if (formData.phone.trim().length < 10) newErrors.phone = 'Phone number must be at least 10 digits';
+    if (formData.phone.trim().replace(/\D/g, '').length < 10) newErrors.phone = 'Phone number must be at least 10 digits';
     if (!formData.department) newErrors.department = 'Department is required';
+    
+    // Validate email format if provided
+    if (formData.email && formData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        newErrors.email = 'Please enter a valid email address';
+      }
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -95,7 +109,18 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
-      await onSubmit(formData);
+      // Clean phone number
+      const cleanedData = {
+        ...formData,
+        phone: formData.phone.replace(/\D/g, ''),
+        email: formData.email?.trim() || undefined,
+        address: formData.address?.trim() || undefined,
+        emergency_contact: formData.emergency_contact?.replace(/\D/g, '') || undefined,
+        allergies: formData.allergies?.trim() || undefined,
+        medical_conditions: formData.medical_conditions?.trim() || undefined,
+        notes: formData.notes?.trim() || undefined,
+      };
+      await onSubmit(cleanedData);
     }
   };
 
@@ -122,6 +147,14 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
     }))
   ];
 
+  if (departments.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading departments...</p>
+      </div>
+    );
+  }
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -184,6 +217,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({ onSubmit, loading }) =
           value={formData.email || ''}
           onChange={(e) => handleChange('email', e.target.value)}
           placeholder="Enter your email"
+          error={errors.email}
         />
 
         <Input

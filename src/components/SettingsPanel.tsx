@@ -144,6 +144,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
         throw new Error('Name and display name are required');
       }
 
+      if (department.consultation_fee && department.consultation_fee < 0) {
+        throw new Error('Consultation fee cannot be negative');
+      }
+
+      if (department.average_consultation_time && department.average_consultation_time < 1) {
+        throw new Error('Average consultation time must be at least 1 minute');
+      }
       const departmentData = {
         ...department,
         name: department.name.toLowerCase().replace(/\s+/g, '_'),
@@ -160,6 +167,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
           .eq('id', department.id);
         if (error) throw error;
       } else {
+        // Check if department name already exists
+        const { data: existing } = await supabase
+          .from('departments')
+          .select('id')
+          .eq('name', departmentData.name)
+          .single();
+
+        if (existing) {
+          throw new Error('Department with this name already exists');
+        }
+
         const { error } = await supabase
           .from('departments')
           .insert(departmentData);
@@ -186,6 +204,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
         throw new Error('Name and specialization are required');
       }
 
+      if (doctor.consultation_fee && doctor.consultation_fee < 0) {
+        throw new Error('Consultation fee cannot be negative');
+      }
+
+      if (doctor.max_patients_per_day && doctor.max_patients_per_day < 1) {
+        throw new Error('Max patients per day must be at least 1');
+      }
+
+      if (doctor.experience_years && doctor.experience_years < 0) {
+        throw new Error('Experience years cannot be negative');
+      }
       const doctorData = {
         ...doctor,
         experience_years: Number(doctor.experience_years) || 0,
@@ -221,11 +250,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   };
 
   const deleteItem = async (table: string, id: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
+    if (!confirm('Are you sure you want to delete this item? This action cannot be undone.')) return;
 
     setSaving(true);
     setError('');
     try {
+      // Check if item is being used before deletion
+      if (table === 'departments') {
+        const { data: visits } = await supabase
+          .from('visits')
+          .select('id')
+          .eq('department', departments.find(d => d.id === id)?.name)
+          .limit(1);
+
+        if (visits && visits.length > 0) {
+          throw new Error('Cannot delete department that has existing visits');
+        }
+      }
+
+      if (table === 'doctors') {
+        const { data: visits } = await supabase
+          .from('visits')
+          .select('id')
+          .eq('doctor_id', id)
+          .limit(1);
+
+        if (visits && visits.length > 0) {
+          throw new Error('Cannot delete doctor that has existing visits');
+        }
+      }
       const { error } = await supabase
         .from(table)
         .delete()

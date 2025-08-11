@@ -37,14 +37,18 @@ export const useQueue = (department?: string) => {
 
       // Calculate queue status
       const waitingVisits = visits.filter(v => ['waiting', 'checked_in'].includes(v.status));
-      const completedVisits = visits.filter(v => v.status === 'completed');
       const inServiceVisits = visits.filter(v => v.status === 'in_service');
+      const completedVisits = visits.filter(v => v.status === 'completed');
       
       let nowServing = 0;
       if (inServiceVisits.length > 0) {
         nowServing = Math.min(...inServiceVisits.map(v => v.stn));
       } else if (completedVisits.length > 0) {
         nowServing = Math.max(...completedVisits.map(v => v.stn));
+      } else if (visits.length > 0) {
+        // If no one is in service or completed, start from the first waiting
+        const firstWaiting = waitingVisits.find(v => v.status === 'waiting');
+        nowServing = firstWaiting ? firstWaiting.stn - 1 : 0;
       }
 
       setQueueStatus({
@@ -54,6 +58,12 @@ export const useQueue = (department?: string) => {
 
     } catch (error) {
       console.error('Error fetching queue:', error);
+      // Set empty state on error
+      setVisits([]);
+      setQueueStatus({
+        now_serving: 0,
+        total_waiting: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -71,6 +81,18 @@ export const useQueue = (department?: string) => {
           event: '*',
           schema: 'public',
           table: 'visits',
+          filter: department ? `department=eq.${department}` : undefined,
+        },
+        () => {
+          fetchQueue();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients',
         },
         () => {
           fetchQueue();

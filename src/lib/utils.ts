@@ -30,8 +30,9 @@ export const generateUID = (): string => {
   return `CLN1-${timestamp}${randomStr}`.toUpperCase();
 };
 
-export const estimateWaitTime = (position: number, avgServiceTime: number = 10): number => {
-  return Math.max(0, position * avgServiceTime);
+export const estimateWaitTime = (position: number, avgServiceTime: number = 15): number => {
+  if (position <= 0) return 0;
+  return Math.max(0, (position - 1) * avgServiceTime);
 };
 
 export const getStatusColor = (status: string): string => {
@@ -53,6 +54,19 @@ export const getStatusColor = (status: string): string => {
   }
 };
 
+export const validatePhoneNumber = (phone: string): boolean => {
+  const cleanPhone = phone.replace(/\D/g, '');
+  return cleanPhone.length >= 10;
+};
+
+export const formatPhoneNumber = (phone: string): string => {
+  return phone.replace(/\D/g, '');
+};
+
+export const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
 export const getPaymentStatusColor = (status: string): string => {
   switch (status) {
     case 'paid':

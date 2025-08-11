@@ -89,11 +89,16 @@ export const HomePage: React.FC = () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       
+      // Validate required data
+      if (!bookingData.name || !bookingData.phone || !bookingData.department) {
+        throw new Error('Missing required booking information');
+      }
+
       // Check if patient exists by phone
       let { data: existingPatients, error: patientError } = await supabase
         .from('patients')
         .select('*')
-        .eq('phone', bookingData.phone)
+        .eq('phone', bookingData.phone.replace(/\D/g, ''))
         .limit(1);
 
       if (patientError) throw patientError;
@@ -118,10 +123,9 @@ export const HomePage: React.FC = () => {
             uid,
             name: bookingData.name,
             age: bookingData.age,
-            phone: bookingData.phone,
+            phone: bookingData.phone.replace(/\D/g, ''),
             email: bookingData.email,
             address: bookingData.address,
-            doctor_id: bookingData.doctor_id || null,
             emergency_contact: bookingData.emergency_contact,
             blood_group: bookingData.blood_group,
             allergies: allergies.length > 0 ? allergies : null,
@@ -132,6 +136,32 @@ export const HomePage: React.FC = () => {
 
         if (createPatientError) throw createPatientError;
         patient = newPatient;
+      } else {
+        // Update existing patient with new information
+        const allergies = bookingData.allergies ? 
+          bookingData.allergies.split(',').map(item => item.trim()).filter(Boolean) : 
+          [];
+        const medicalConditions = bookingData.medical_conditions ? 
+          bookingData.medical_conditions.split(',').map(item => item.trim()).filter(Boolean) : 
+          [];
+
+        const { error: updateError } = await supabase
+          .from('patients')
+          .update({
+            name: bookingData.name,
+            age: bookingData.age,
+            email: bookingData.email,
+            address: bookingData.address,
+            emergency_contact: bookingData.emergency_contact,
+            blood_group: bookingData.blood_group,
+            allergies: allergies.length > 0 ? allergies : patient.allergies,
+            medical_conditions: medicalConditions.length > 0 ? medicalConditions : patient.medical_conditions,
+          })
+          .eq('id', patient.id);
+
+        if (updateError) {
+          console.warn('Failed to update patient info:', updateError);
+        }
       }
 
       // Get next STN for today and department
@@ -165,6 +195,7 @@ export const HomePage: React.FC = () => {
           clinic_id: 'CLN1',
           stn: nextSTN,
           department: bookingData.department,
+          doctor_id: bookingData.doctor_id || null,
           visit_date: today,
           status: 'waiting',
           payment_status: bookingData.payment_mode === 'pay_now' ? 'pending' : 'pay_at_clinic',
@@ -193,7 +224,16 @@ export const HomePage: React.FC = () => {
       }
 
       const position = Math.max(0, nextSTN - nowServing);
-      const estimatedWaitMinutes = position * 10; // Assume 10 minutes per patient
+      
+      // Get department average consultation time
+      const { data: deptData } = await supabase
+        .from('departments')
+        .select('average_consultation_time')
+        .eq('name', bookingData.department)
+        .single();
+      
+      const avgTime = deptData?.average_consultation_time || 15;
+      const estimatedWaitMinutes = position * avgTime;
 
       const result: BookingResponse = {
         uid: patient.uid,
@@ -211,10 +251,13 @@ export const HomePage: React.FC = () => {
       setBookingResult(result);
       setShowBookingModal(false);
       setShowConfirmationModal(true);
+      
+      // Refresh department stats
+      fetchDepartmentStats();
 
     } catch (error) {
       console.error('Booking error:', error);
-      alert('Failed to book token. Please try again.');
+      alert(`Failed to book token: ${error instanceof Error ? error.message : 'Please try again.'}`);
     } finally {
       setBookingLoading(false);
     }
